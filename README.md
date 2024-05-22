@@ -1,2 +1,3 @@
 # ps
-Publish/subscribe utility
+
+General-purpose pub/sub for Go.
