@@ -82,6 +82,11 @@ func TestBasics(t *testing.T) {
 		requireNoError(t, err)
 		compareStats(t, mod3stats, ps.Stats{Skips: 4, Sends: 2})
 
+		allstats := broker.ActiveSubscribers()
+		expectEqual(t, 2, len(allstats))
+		compareStats(t, allstats[0], mod2stats)
+		compareStats(t, allstats[1], mod3stats)
+
 		mod2unsub, err := broker.Unsubscribe(mod2)
 		requireNoError(t, err)
 		compareStats(t, mod2stats, mod2unsub)

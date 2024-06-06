@@ -1,7 +1,9 @@
 package ps
 
 import (
+	"sort"
 	"sync"
+	"unsafe"
 )
 
 type Broker[T any] struct {
@@ -97,6 +99,34 @@ func (b *Broker[T]) Stats(c chan<- T) (Stats, error) {
 	}
 
 	return s.stats, nil
+}
+
+// ActiveSubscribers returns statistics for every active subscriber.
+func (b *Broker[T]) ActiveSubscribers() []Stats {
+	b.mtx.Lock()
+	defer b.mtx.Unlock()
+
+	// An intermediate type, to provide stable order.
+	type active struct {
+		c chan<- T
+		s Stats
+	}
+
+	as := make([]active, 0, len(b.subs))
+	for c, s := range b.subs {
+		as = append(as, active{c, s.stats})
+	}
+
+	sort.Slice(as, func(i, j int) bool {
+		return uintptr(unsafe.Pointer(&(as[i].c))) < uintptr(unsafe.Pointer(&(as[j].c)))
+	})
+
+	ss := make([]Stats, 0, len(as))
+	for _, a := range as {
+		ss = append(ss, a.s)
+	}
+
+	return ss
 }
 
 type subscriber[T any] struct {
