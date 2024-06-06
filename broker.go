@@ -6,6 +6,8 @@ import (
 	"unsafe"
 )
 
+// Broker is a pub/sub coördination point for values of type T. See the Publish,
+// Subscribe, and Unsubscribe methods for more information.
 type Broker[T any] struct {
 	mtx  sync.Mutex
 	subs map[chan<- T]*subscriber[T]

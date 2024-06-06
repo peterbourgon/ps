@@ -9,7 +9,7 @@ var (
 	// ErrAlreadySubscribed signals that a given subscription already exists.
 	ErrAlreadySubscribed = errors.New("already subscribed")
 
-	// ErrNotSubscribes indicates that a given subscription doesn't exist.
+	// ErrNotSubscribed indicates that a given subscription doesn't exist.
 	ErrNotSubscribed = errors.New("not subscribed")
 )
 
