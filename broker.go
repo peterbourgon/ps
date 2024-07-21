@@ -1,22 +1,23 @@
 package ps
 
 import (
-	"sort"
+	"slices"
 	"sync"
-	"unsafe"
 )
 
 // Broker is a pub/sub coördination point for values of type T. See the Publish,
 // Subscribe, and Unsubscribe methods for more information.
 type Broker[T any] struct {
-	mtx  sync.Mutex
-	subs map[chan<- T]*subscriber[T]
+	mtx   sync.Mutex
+	index map[chan<- T]*subscriber[T]
+	slice []*subscriber[T]
 }
 
 // NewBroker returns a new broker for values of type T.
 func NewBroker[T any]() *Broker[T] {
 	return &Broker[T]{
-		subs: map[chan<- T]*subscriber[T]{},
+		index: map[chan<- T]*subscriber[T]{},
+		slice: []*subscriber[T]{},
 	}
 }
 
@@ -31,13 +32,13 @@ func (b *Broker[T]) Publish(v T) Stats {
 
 	var stats Stats
 
-	for c, s := range b.subs {
+	for _, s := range b.slice {
 		if !s.allow(v) {
 			s.stats.Skips++
 			stats.Skips++
 		} else {
 			select {
-			case c <- v:
+			case s.c <- v:
 				s.stats.Sends++
 				stats.Sends++
 			default:
@@ -59,13 +60,17 @@ func (b *Broker[T]) Subscribe(c chan<- T, allow func(T) bool) error {
 	b.mtx.Lock()
 	defer b.mtx.Unlock()
 
-	if _, ok := b.subs[c]; ok {
+	if _, ok := b.index[c]; ok {
 		return ErrAlreadySubscribed
 	}
 
-	b.subs[c] = &subscriber[T]{
+	s := &subscriber[T]{
 		allow: allow,
+		c:     c,
 	}
+
+	b.index[c] = s
+	b.slice = append(b.slice, s)
 
 	return nil
 }
@@ -80,12 +85,13 @@ func (b *Broker[T]) Unsubscribe(c chan<- T) (Stats, error) {
 	b.mtx.Lock()
 	defer b.mtx.Unlock()
 
-	s, ok := b.subs[c]
+	s, ok := b.index[c]
 	if !ok {
 		return Stats{}, ErrNotSubscribed
 	}
 
-	delete(b.subs, c)
+	delete(b.index, c)
+	b.slice = slices.DeleteFunc(b.slice, func(s *subscriber[T]) bool { return s.c == c })
 
 	return s.stats, nil
 }
@@ -95,7 +101,7 @@ func (b *Broker[T]) Stats(c chan<- T) (Stats, error) {
 	b.mtx.Lock()
 	defer b.mtx.Unlock()
 
-	s, ok := b.subs[c]
+	s, ok := b.index[c]
 	if !ok {
 		return Stats{}, ErrNotSubscribed
 	}
@@ -108,30 +114,16 @@ func (b *Broker[T]) ActiveSubscribers() []Stats {
 	b.mtx.Lock()
 	defer b.mtx.Unlock()
 
-	// An intermediate type, to provide stable order.
-	type active struct {
-		c chan<- T
-		s Stats
+	res := make([]Stats, len(b.slice))
+	for i := range b.slice {
+		res[i] = b.slice[i].stats
 	}
 
-	as := make([]active, 0, len(b.subs))
-	for c, s := range b.subs {
-		as = append(as, active{c, s.stats})
-	}
-
-	sort.Slice(as, func(i, j int) bool {
-		return uintptr(unsafe.Pointer(&(as[i].c))) < uintptr(unsafe.Pointer(&(as[j].c)))
-	})
-
-	ss := make([]Stats, 0, len(as))
-	for _, a := range as {
-		ss = append(ss, a.s)
-	}
-
-	return ss
+	return res
 }
 
 type subscriber[T any] struct {
 	allow func(T) bool
 	stats Stats
+	c     chan<- T
 }
