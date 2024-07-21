@@ -76,11 +76,12 @@ func (h *handler[T]) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusInternalServerError, fmt.Errorf("subscribe: %w", err))
 		return
 	}
-	logger.Printf("subscribe")
 	defer func() {
 		stats, err := h.broker.Unsubscribe(c)
 		logger.Printf("unsubscribe: %v (err=%v)", stats, err)
 	}()
+
+	logger.Printf("subscribe: event buffer size %d, heartbeat interval %v", buffer, heartbeat)
 
 	heartbeats := time.NewTicker(heartbeat)
 	defer heartbeats.Stop()
