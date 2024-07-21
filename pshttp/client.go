@@ -14,6 +14,9 @@ import (
 	"github.com/peterbourgon/ps"
 )
 
+// Client represents a remote pub/sub broker expected to be served by a
+// [Handler]. It provides publish and subscribe functionality similar to a
+// normal [ps.Broker].
 type Client[T any] struct {
 	client *http.Client
 	uri    string
@@ -21,10 +24,13 @@ type Client[T any] struct {
 	decode DecodeFunc[T]
 }
 
+// NewDefaultClient calls NewClient with [http.DefaultClient] and the default
+// [Encode] and [Decode] functions.
 func NewDefaultClient[T any](uri string) (*Client[T], error) {
 	return NewClient(http.DefaultClient, uri, Encode[T], Decode[T])
 }
 
+// NewClient constructs a new client targeting the given URI.
 func NewClient[T any](client *http.Client, uri string, encode EncodeFunc[T], decode DecodeFunc[T]) (*Client[T], error) {
 	u, err := url.Parse(uri)
 	if err != nil {
@@ -41,6 +47,7 @@ func NewClient[T any](client *http.Client, uri string, encode EncodeFunc[T], dec
 	}, nil
 }
 
+// Publish the value v to the remote pub/sub broker.
 func (c *Client[T]) Publish(ctx context.Context, v T) (ps.Stats, error) {
 	var buf bytes.Buffer
 	if err := c.encode(v, &buf); err != nil {
@@ -73,6 +80,9 @@ func (c *Client[T]) Publish(ctx context.Context, v T) (ps.Stats, error) {
 	return stats, nil
 }
 
+// Subscribe to published events on the remote pub/sub broker. Subscribe blocks
+// until the context is canceled, or a fatal error occurs, whichever comes
+// first.
 func (c *Client[T]) Subscribe(ctx context.Context, ch chan<- T, retry time.Duration) error {
 	req, err := http.NewRequestWithContext(ctx, "GET", c.uri, nil)
 	if err != nil {

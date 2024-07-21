@@ -22,10 +22,13 @@ type handler[T any] struct {
 	logger *log.Logger
 }
 
+// NewDefaultHandler calls NewHandler with the default [Encode] and [Decode]
+// functions, and logging to [io.Discard].
 func NewDefaultHandler[T any](broker *ps.Broker[T]) http.Handler {
 	return NewHandler(broker, Encode[T], Decode[T], io.Discard)
 }
 
+// NewHandler constructs a new [http.Handler] wrapping the provided [ps.Broker].
 func NewHandler[T any](broker *ps.Broker[T], encode EncodeFunc[T], decode DecodeFunc[T], logs io.Writer) http.Handler {
 	h := &handler[T]{
 		broker: broker,
@@ -68,7 +71,7 @@ func (h *handler[T]) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 		ctx       = r.Context()
 		logger    = log.New(h.logger.Writer(), h.logger.Prefix()+fmt.Sprintf("%s: ", r.RemoteAddr), h.logger.Flags())
 		buffer    = parseDefault(r.URL.Query().Get("buffer"), strconv.Atoi, 100)
-		heartbeat = parseDefault(r.URL.Query().Get("heartbeat"), time.ParseDuration, 3*time.Second)
+		heartbeat = parseDefault(r.URL.Query().Get("heartbeat"), parseDurationMinMax(1*time.Second, 60*time.Second), 3*time.Second)
 		c         = make(chan T, buffer)
 	)
 
@@ -81,12 +84,12 @@ func (h *handler[T]) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 		logger.Printf("unsubscribe: %v (err=%v)", stats, err)
 	}()
 
-	logger.Printf("subscribe: event buffer size %d, heartbeat interval %v", buffer, heartbeat)
+	logger.Printf("subscribe: buffer=%d heartbeat=%v", buffer, heartbeat)
 
 	heartbeats := time.NewTicker(heartbeat)
 	defer heartbeats.Stop()
 
-	eventsource.Handler(func(lastID string, enc *eventsource.Encoder, stop <-chan bool) {
+	eventsource.Handler(func(_ string, enc *eventsource.Encoder, stop <-chan bool) {
 		err := func() error {
 			var buf bytes.Buffer
 			for {
@@ -140,15 +143,4 @@ func (h *handler[T]) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 			logger.Printf("handler exiting (%v)", err)
 		}
 	}).ServeHTTP(w, r)
-}
-
-const (
-	EventTypeData      = "data/v1"
-	EventTypeHeartbeat = "heartbeat/v1"
-)
-
-type HeartbeatEvent struct {
-	Timestamp time.Time `json:"ts"`
-	Stats     ps.Stats  `json:"stats,omitempty"`
-	Error     string    `json:"error,omitempty"`
 }

@@ -6,6 +6,7 @@ import (
 	"mime"
 	"net/http"
 	"strings"
+	"time"
 )
 
 func respondJSON(w http.ResponseWriter, code int, response any) error {
@@ -46,4 +47,17 @@ func parseDefault[T any](s string, parse func(string) (T, error), def T) T {
 		return v
 	}
 	return def
+}
+
+func parseDurationMinMax(min, max time.Duration) func(string) (time.Duration, error) {
+	return func(s string) (time.Duration, error) {
+		d, err := time.ParseDuration(s)
+		if err != nil {
+			return 0, err
+		}
+		if d < min || d > max {
+			return 0, fmt.Errorf("duration outside of min/max bounds")
+		}
+		return d, nil
+	}
 }

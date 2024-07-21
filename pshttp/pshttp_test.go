@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http/httptest"
-	"os"
 	"testing"
 	"time"
 
@@ -18,7 +17,7 @@ func TestBasics(t *testing.T) {
 	ctx := context.Background()
 	broker := ps.NewBroker[int64]()
 
-	handler := pshttp.NewHandler(broker, pshttp.Encode, pshttp.Decode, os.Stderr)
+	handler := pshttp.NewHandler(broker, pshttp.Encode, pshttp.Decode, newTestWriter(t))
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 
@@ -90,4 +89,19 @@ func TestBasics(t *testing.T) {
 	publish(4)
 	recvAndCheck(v1, 0)
 	recvAndCheck(v2, 0)
+}
+
+type testWriter struct {
+	tb testing.TB
+}
+
+func newTestWriter(tb testing.TB) *testWriter {
+	return &testWriter{
+		tb: tb,
+	}
+}
+
+func (tw *testWriter) Write(p []byte) (int, error) {
+	tw.tb.Logf("%s", string(p))
+	return len(p), nil
 }
