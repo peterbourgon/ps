@@ -1,22 +1,21 @@
 package ps
 
 import (
-	"sort"
+	"slices"
 	"sync"
-	"unsafe"
 )
 
 // Broker is a pub/sub coördination point for values of type T. See the Publish,
 // Subscribe, and Unsubscribe methods for more information.
 type Broker[T any] struct {
 	mtx  sync.Mutex
-	subs map[chan<- T]*subscriber[T]
+	subs []*subscriber[T]
 }
 
 // NewBroker returns a new broker for values of type T.
 func NewBroker[T any]() *Broker[T] {
 	return &Broker[T]{
-		subs: map[chan<- T]*subscriber[T]{},
+		//
 	}
 }
 
@@ -31,13 +30,13 @@ func (b *Broker[T]) Publish(v T) Stats {
 
 	var stats Stats
 
-	for c, s := range b.subs {
+	for _, s := range b.subs {
 		if !s.allow(v) {
 			s.stats.Skips++
 			stats.Skips++
 		} else {
 			select {
-			case c <- v:
+			case s.c <- v:
 				s.stats.Sends++
 				stats.Sends++
 			default:
@@ -50,7 +49,8 @@ func (b *Broker[T]) Publish(v T) Stats {
 	return stats
 }
 
-// Subscribe adds c to the broker, and forwards every published value that passes the allow func to c.
+// Subscribe adds c to the broker, and forwards every published value that
+// passes the allow func to c.
 func (b *Broker[T]) Subscribe(c chan<- T, allow func(T) bool) error {
 	if allow == nil {
 		allow = func(T) bool { return true }
@@ -59,13 +59,18 @@ func (b *Broker[T]) Subscribe(c chan<- T, allow func(T) bool) error {
 	b.mtx.Lock()
 	defer b.mtx.Unlock()
 
-	if _, ok := b.subs[c]; ok {
-		return ErrAlreadySubscribed
+	for _, s := range b.subs {
+		if s.c == c {
+			return ErrAlreadySubscribed
+		}
 	}
 
-	b.subs[c] = &subscriber[T]{
+	s := &subscriber[T]{
+		c:     c,
 		allow: allow,
 	}
+
+	b.subs = append(b.subs, s)
 
 	return nil
 }
@@ -80,14 +85,23 @@ func (b *Broker[T]) Unsubscribe(c chan<- T) (Stats, error) {
 	b.mtx.Lock()
 	defer b.mtx.Unlock()
 
-	s, ok := b.subs[c]
-	if !ok {
+	var target *subscriber[T]
+	for _, s := range b.subs {
+		if s.c == c {
+			target = s
+			break
+		}
+	}
+
+	if target == nil {
 		return Stats{}, ErrNotSubscribed
 	}
 
-	delete(b.subs, c)
+	b.subs = slices.DeleteFunc(b.subs, func(s *subscriber[T]) bool {
+		return s == target
+	})
 
-	return s.stats, nil
+	return target.stats, nil
 }
 
 // Stats returns current statistics for the subscription represented by c.
@@ -95,12 +109,13 @@ func (b *Broker[T]) Stats(c chan<- T) (Stats, error) {
 	b.mtx.Lock()
 	defer b.mtx.Unlock()
 
-	s, ok := b.subs[c]
-	if !ok {
-		return Stats{}, ErrNotSubscribed
+	for _, s := range b.subs {
+		if s.c == c {
+			return s.stats, nil
+		}
 	}
 
-	return s.stats, nil
+	return Stats{}, ErrNotSubscribed
 }
 
 // ActiveSubscribers returns statistics for every active subscriber.
@@ -108,30 +123,16 @@ func (b *Broker[T]) ActiveSubscribers() []Stats {
 	b.mtx.Lock()
 	defer b.mtx.Unlock()
 
-	// An intermediate type, to provide stable order.
-	type active struct {
-		c chan<- T
-		s Stats
+	res := make([]Stats, len(b.subs))
+	for i := range b.subs {
+		res[i] = b.subs[i].stats
 	}
 
-	as := make([]active, 0, len(b.subs))
-	for c, s := range b.subs {
-		as = append(as, active{c, s.stats})
-	}
-
-	sort.Slice(as, func(i, j int) bool {
-		return uintptr(unsafe.Pointer(&(as[i].c))) < uintptr(unsafe.Pointer(&(as[j].c)))
-	})
-
-	ss := make([]Stats, 0, len(as))
-	for _, a := range as {
-		ss = append(ss, a.s)
-	}
-
-	return ss
+	return res
 }
 
 type subscriber[T any] struct {
+	c     chan<- T
 	allow func(T) bool
 	stats Stats
 }
