@@ -8,16 +8,14 @@ import (
 // Broker is a pub/sub coördination point for values of type T. See the Publish,
 // Subscribe, and Unsubscribe methods for more information.
 type Broker[T any] struct {
-	mtx   sync.Mutex
-	index map[chan<- T]*subscriber[T]
-	slice []*subscriber[T]
+	mtx  sync.Mutex
+	subs []*subscriber[T]
 }
 
 // NewBroker returns a new broker for values of type T.
 func NewBroker[T any]() *Broker[T] {
 	return &Broker[T]{
-		index: map[chan<- T]*subscriber[T]{},
-		slice: []*subscriber[T]{},
+		//
 	}
 }
 
@@ -32,7 +30,7 @@ func (b *Broker[T]) Publish(v T) Stats {
 
 	var stats Stats
 
-	for _, s := range b.slice {
+	for _, s := range b.subs {
 		if !s.allow(v) {
 			s.stats.Skips++
 			stats.Skips++
@@ -51,7 +49,8 @@ func (b *Broker[T]) Publish(v T) Stats {
 	return stats
 }
 
-// Subscribe adds c to the broker, and forwards every published value that passes the allow func to c.
+// Subscribe adds c to the broker, and forwards every published value that
+// passes the allow func to c.
 func (b *Broker[T]) Subscribe(c chan<- T, allow func(T) bool) error {
 	if allow == nil {
 		allow = func(T) bool { return true }
@@ -60,17 +59,18 @@ func (b *Broker[T]) Subscribe(c chan<- T, allow func(T) bool) error {
 	b.mtx.Lock()
 	defer b.mtx.Unlock()
 
-	if _, ok := b.index[c]; ok {
-		return ErrAlreadySubscribed
+	for _, s := range b.subs {
+		if s.c == c {
+			return ErrAlreadySubscribed
+		}
 	}
 
 	s := &subscriber[T]{
-		allow: allow,
 		c:     c,
+		allow: allow,
 	}
 
-	b.index[c] = s
-	b.slice = append(b.slice, s)
+	b.subs = append(b.subs, s)
 
 	return nil
 }
@@ -85,15 +85,23 @@ func (b *Broker[T]) Unsubscribe(c chan<- T) (Stats, error) {
 	b.mtx.Lock()
 	defer b.mtx.Unlock()
 
-	s, ok := b.index[c]
-	if !ok {
+	var target *subscriber[T]
+	for _, s := range b.subs {
+		if s.c == c {
+			target = s
+			break
+		}
+	}
+
+	if target == nil {
 		return Stats{}, ErrNotSubscribed
 	}
 
-	delete(b.index, c)
-	b.slice = slices.DeleteFunc(b.slice, func(s *subscriber[T]) bool { return s.c == c })
+	b.subs = slices.DeleteFunc(b.subs, func(s *subscriber[T]) bool {
+		return s == target
+	})
 
-	return s.stats, nil
+	return target.stats, nil
 }
 
 // Stats returns current statistics for the subscription represented by c.
@@ -101,12 +109,13 @@ func (b *Broker[T]) Stats(c chan<- T) (Stats, error) {
 	b.mtx.Lock()
 	defer b.mtx.Unlock()
 
-	s, ok := b.index[c]
-	if !ok {
-		return Stats{}, ErrNotSubscribed
+	for _, s := range b.subs {
+		if s.c == c {
+			return s.stats, nil
+		}
 	}
 
-	return s.stats, nil
+	return Stats{}, ErrNotSubscribed
 }
 
 // ActiveSubscribers returns statistics for every active subscriber.
@@ -114,16 +123,16 @@ func (b *Broker[T]) ActiveSubscribers() []Stats {
 	b.mtx.Lock()
 	defer b.mtx.Unlock()
 
-	res := make([]Stats, len(b.slice))
-	for i := range b.slice {
-		res[i] = b.slice[i].stats
+	res := make([]Stats, len(b.subs))
+	for i := range b.subs {
+		res[i] = b.subs[i].stats
 	}
 
 	return res
 }
 
 type subscriber[T any] struct {
+	c     chan<- T
 	allow func(T) bool
 	stats Stats
-	c     chan<- T
 }
