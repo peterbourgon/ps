@@ -22,10 +22,10 @@ type handler[T any] struct {
 	logger *log.Logger
 }
 
-// NewDefaultHandler calls NewHandler with the default [Encode] and [Decode]
+// NewDefaultHandler calls NewHandler with the default [EncodeJSON] and [DecodeJSON]
 // functions, and logging to [io.Discard].
 func NewDefaultHandler[T any](broker *ps.Broker[T]) http.Handler {
-	return NewHandler(broker, Encode[T], Decode[T], io.Discard)
+	return NewHandler(broker, EncodeJSON[T], DecodeJSON[T], io.Discard)
 }
 
 // NewHandler constructs a new [http.Handler] wrapping the provided [ps.Broker].
@@ -81,7 +81,7 @@ func (h *handler[T]) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() {
 		stats, err := h.broker.Unsubscribe(c)
-		logger.Printf("unsubscribe: %v (err=%v)", stats, err)
+		logger.Printf("unsubscribe: %v (err: %v)", stats, err)
 	}()
 
 	logger.Printf("subscribe: buffer=%d heartbeat=%v", buffer, heartbeat)
@@ -129,18 +129,13 @@ func (h *handler[T]) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 					flusher.Flush()
 
 				case <-stop:
-					return fmt.Errorf("stop signalled")
+					return fmt.Errorf("stop signaled")
 
 				case <-ctx.Done():
 					return ctx.Err()
 				}
 			}
 		}()
-		switch {
-		case err == nil:
-			logger.Printf("handler exiting")
-		case err != nil:
-			logger.Printf("handler exiting (%v)", err)
-		}
+		logger.Printf("handler exiting (err: %v)", err)
 	}).ServeHTTP(w, r)
 }

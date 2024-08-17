@@ -24,10 +24,10 @@ type Client[T any] struct {
 	decode DecodeFunc[T]
 }
 
-// NewDefaultClient calls NewClient with [http.DefaultClient] and the default
-// [Encode] and [Decode] functions.
+// NewDefaultClient calls [NewClient] with [http.DefaultClient] and the default
+// [EncodeJSON] and [DecodeJSON] functions.
 func NewDefaultClient[T any](uri string) (*Client[T], error) {
-	return NewClient(http.DefaultClient, uri, Encode[T], Decode[T])
+	return NewClient(http.DefaultClient, uri, EncodeJSON[T], DecodeJSON[T])
 }
 
 // NewClient constructs a new client targeting the given URI.

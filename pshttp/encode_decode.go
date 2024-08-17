@@ -14,12 +14,12 @@ type EncodeFunc[T any] func(T, io.Writer) error
 // EncodeFunc.
 type DecodeFunc[T any] func(io.Reader, *T) error
 
-// Encode is a default EncodeFunc that encodes the value as JSON.
-func Encode[T any](v T, w io.Writer) error {
+// EncodeJSON is a default EncodeFunc that encodes the value as JSON.
+func EncodeJSON[T any](v T, w io.Writer) error {
 	return json.NewEncoder(w).Encode(v)
 }
 
-// Decode is a default DecodeFunc that decodes the value as JSON.
-func Decode[T any](r io.Reader, v *T) error {
+// DecodeJSON is a default DecodeFunc that decodes the value as JSON.
+func DecodeJSON[T any](r io.Reader, v *T) error {
 	return json.NewDecoder(r).Decode(v)
 }

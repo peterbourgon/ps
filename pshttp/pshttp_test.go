@@ -17,7 +17,7 @@ func TestBasics(t *testing.T) {
 	ctx := context.Background()
 	broker := ps.NewBroker[int64]()
 
-	handler := pshttp.NewHandler(broker, pshttp.Encode, pshttp.Decode, newTestWriter(t))
+	handler := pshttp.NewHandler(broker, pshttp.EncodeJSON, pshttp.DecodeJSON, newTestWriter(t))
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 
