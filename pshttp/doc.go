@@ -1,4 +1,4 @@
-// Package pshttp provides an HTTP interface to a ps.Broker.
+// Package pshttp provides an HTTP interface to a [ps.Broker].
 //
 // [NewHandler] wraps a [ps.Broker] and returns an [http.Handler]. The handler
 // accepts POST requests for publishing events, and GET requests for subscribing
